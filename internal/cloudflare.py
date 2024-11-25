@@ -109,6 +109,15 @@ class CloudflareClient:
             if "existing page rule" in str(e):
                 return
             raise e
+        
+    def list_zones(self) -> List[object]:
+        zones = []
+        for zone in self.cloudflare.zones.list():
+            zones.append(zone)
+        return zones
+    
+    def check_nameservers_now(self, zone_id: str) -> None:
+        self.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
 
 
 class BaseCloudflareClientException(Exception):

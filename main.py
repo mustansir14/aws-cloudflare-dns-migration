@@ -287,7 +287,7 @@ def monitor_ns_propagation() -> Tuple[int, int, List[Tuple[str, str]]]:
     print("Starting NS propagation monitoring...")
 
     # Fetch all zones
-    zones = cloudflare.cloudflare.zones.list().result
+    zones = cloudflare.list_zones()
     if not zones:
         print("No zones found in Cloudflare account.")
         return
@@ -309,7 +309,7 @@ def monitor_ns_propagation() -> Tuple[int, int, List[Tuple[str, str]]]:
         if status == "pending":
             print(f"Triggering 'Check nameserver now' for domain: {domain}")
             try:
-                cloudflare.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
+                cloudflare.check_nameservers_now(zone_id=zone_id)
                 print(f"Nameserver check triggered for {domain}")
                 success += 1
             except Exception as e:
