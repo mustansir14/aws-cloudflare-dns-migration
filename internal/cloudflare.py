@@ -2,6 +2,7 @@ import warnings
 from typing import Dict, List
 
 from cloudflare import BadRequestError, Cloudflare, NotFoundError
+from internal.exceptions import NotFoundException
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -17,7 +18,7 @@ class CloudflareClient:
         zone = self.cloudflare.zones.list(name=domain)
         if zone.result:
             return zone.result[0]
-        raise CloudflareNotFoundException(f"Zone with domain {domain} not found")
+        raise NotFoundException(f"Zone with domain {domain} not found")
 
     def get_dns_records(self, zone_id: str) -> List[object]:
         dns_records = []
@@ -118,11 +119,3 @@ class CloudflareClient:
     
     def check_nameservers_now(self, zone_id: str) -> None:
         self.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
-
-
-class BaseCloudflareClientException(Exception):
-    """Base Exception for CloudflareClient."""
-
-
-class CloudflareNotFoundException(BaseCloudflareClientException):
-    """Cloudflare not found exception."""
