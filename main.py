@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import boto3
 
 from internal.cloudflare import CloudflareClient, CloudflareNotFoundException
@@ -47,7 +49,7 @@ def get_hosted_zones_from_aws():
     return unique_zones.values()
 
 
-def migrate_to_cloudflare():
+def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
     """Migrate DNS records from AWS Route 53 to Cloudflare."""
 
     OLD_IPs = ["209.216.83.146", "209.216.83.147"]
@@ -275,13 +277,58 @@ def migrate_to_cloudflare():
         processed += 1
 
     print("Migration to Cloudflare completed.")
-    print("Total Processed: ", processed)
-    print("Total Success: ", success)
-    print("Total Failure: ", len(failure_domains))
-    if len(failure_domains) > 0:
-        print("The following domains failed to migrate:")
-        for domain, zone_id in failure_domains:
-            print(f"{domain} | zone id: {zone_id}")
+    return processed, success, failure_domains
+
+
+def monitor_ns_propagation() -> Tuple[int, int, List[Tuple[str, str]]]:
+    """
+    Monitor NS propagation for Cloudflare sites and update SSL/TLS settings upon activation.
+    """
+    print("Starting NS propagation monitoring...")
+
+    # Fetch all zones
+    zones = cloudflare.cloudflare.zones.list().result
+    if not zones:
+        print("No zones found in Cloudflare account.")
+        return
+
+    processed = 0
+    success = 0
+
+    failure_domains = []
+
+    for zone in zones:
+        domain = zone.name
+        zone_id = zone.id
+
+        # Check the status of the domain
+        status = zone.status
+        print(f"Domain: {domain}, Status: {status}")
+        processed += 1
+
+        if status == "pending":
+            print(f"Triggering 'Check nameserver now' for domain: {domain}")
+            try:
+                cloudflare.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
+                print(f"Nameserver check triggered for {domain}")
+                success += 1
+            except Exception as e:
+                failure_domains.append((domain, zone_id))
+                print(f"Failed to trigger nameserver check for {domain}: {e}")
+
+        elif status == "active":
+            print(f"Updating SSL/TLS settings for active domain: {domain}")
+            try:
+                # Set SSL/TLS to "Custom" with encryption type "Full"
+                cloudflare.edit_setting(zone_id=zone_id, name="ssl", value="full")
+                print(f"SSL/TLS settings updated to 'Full' for {domain}")
+                success += 1
+            except Exception as e:
+                print(f"Failed to update SSL/TLS settings for {domain}: {e}")
+                failure_domains.append((domain, zone_id))
+
+    print("NS propagation monitoring completed.")
+    return processed, success, failure_domains
 
 
 def migrate_to_aws():
@@ -350,4 +397,11 @@ if __name__ == "__main__":
     # elif args.direction == "cloudflare-to-aws":
     #     migrate_to_aws()
 
-    migrate_to_cloudflare()
+    processed, success, failure_domains = monitor_ns_propagation()
+    print("Total Processed: ", processed)
+    print("Total Success: ", success)
+    print("Total Failure: ", len(failure_domains))
+    if len(failure_domains) > 0:
+        print("The following domains failed:")
+        for domain, zone_id in failure_domains:
+            print(f"{domain} | zone id: {zone_id}")
