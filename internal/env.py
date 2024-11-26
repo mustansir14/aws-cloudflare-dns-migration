@@ -18,11 +18,16 @@ def _parse_bool(val: Union[str, bool]) -> bool:  # pylint: disable=E1136
 
 
 class AppEnv:
+    SCENARIO: int
     AWS_ACCESS_KEY_ID: str
     AWS_SECRET_ACCESS_KEY: str
     CLOUDFLARE_EMAIL: str
     CLOUDFLARE_API_KEY: str
     SKIP_DNS_SYNC: bool = False
+    PRIMARY_IP: str = ""
+    SECONDARY_IP: str = ""
+    HEALTH_CHECK_ID: str = ""
+    CREATE_FAILOVER_RECORDS: bool = True
 
     """
     Map environment variables to class fields according to these rules:
@@ -56,6 +61,37 @@ class AppEnv:
                         env[field], var_type, field
                     )
                 )
+
+        if self.SCENARIO not in [1, 2, 3]:
+            raise AppEnvError("SCENARIO must be one of 1, 2, 3")
+
+        if (
+            self.SCENARIO == 3
+            and self.CREATE_FAILOVER_RECORDS
+            and self.PRIMARY_IP == ""
+        ):
+            raise AppEnvError(
+                "PRIMARY_IP is required for SCENARIO 3 and CREATE_FAILOVER_RECORDS=1"
+            )
+
+        if (
+            self.SCENARIO == 3
+            and self.CREATE_FAILOVER_RECORDS
+            and self.SECONDARY_IP == ""
+        ):
+            raise AppEnvError(
+                "SECONDARY_IP is required for SCENARIO 3 and CREATE_FAILOVER_RECORDS=1"
+            )
+
+        if (
+            self.SCENARIO == 3
+            and self.CREATE_FAILOVER_RECORDS
+            and self.HEALTH_CHECK_ID == ""
+        ):
+            raise AppEnvError(
+                "HEALTH_CHECK_ID is required for SCENARIO 3 and CREATE_FAILOVER_RECORDS=1"
+            )
+
         print(f"Env loaded: {self.__dict__}")
 
     def __repr__(self):

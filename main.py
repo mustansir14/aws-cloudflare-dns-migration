@@ -2,8 +2,8 @@ from typing import List, Tuple
 
 from internal.aws import AWSClient
 from internal.cloudflare import CloudflareClient
-from internal.exceptions import NotFoundException
 from internal.env import Env
+from internal.exceptions import NotFoundException
 
 # Initialize AWS and Cloudflare clients
 aws = AWSClient(Env.AWS_ACCESS_KEY_ID, Env.AWS_SECRET_ACCESS_KEY)
@@ -102,8 +102,6 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                             if (
                                 existing_record.name == record_name
                                 and existing_record.type == record_type
-                                and existing_record.content.lower()
-                                == content.lower().rstrip(".")
                             ):
                                 record_exists = True
                                 break
@@ -250,7 +248,7 @@ def monitor_ns_propagation() -> Tuple[int, int, List[Tuple[str, str]]]:
     zones = cloudflare.list_zones()
     if not zones:
         print("No zones found in Cloudflare account.")
-        return
+        return 0, 0, []
 
     processed = 0
     success = 0
@@ -295,74 +293,157 @@ def migrate_to_aws():
     """Migrate DNS records from Cloudflare to AWS Route 53."""
     zones = cloudflare.list_zones()
 
+    processed = 0
+    success = 0
+
+    failure_domains = []
+
     for zone in zones:
         domain = zone.name
         print(f"Migrating domain: {domain}")
+        processed += 1
 
-        # Check if the domain already exists on AWS
         try:
-            existing_zone = aws.get_zone_by_domain(domain=domain)
-            print(f"Domain {domain} already exists on AWS")
-            if Env.SKIP_DNS_SYNC:
-                print("Skipping...")
-                continue
-            print("Syncing DNS records")
-            aws_zone_id = existing_zone["Id"]
-            existing_dns_records = aws.get_dns_records(
-                zone_id=aws_zone_id
-            )
-        except NotFoundException:
-            # Add domain to AWS
-            zone_info = aws.create_zone(domain)
-            aws_zone_id = zone_info["Id"]
-            existing_dns_records = None
+            # Check if the domain already exists on AWS
+            try:
+                existing_zone = aws.get_zone_by_domain(domain=domain)
+                print(f"Domain {domain} already exists on AWS")
+                if Env.SKIP_DNS_SYNC:
+                    print("Skipping...")
+                    continue
+                print("Syncing DNS records")
+                aws_zone_id = existing_zone["Id"]
+                existing_dns_records = aws.get_dns_records(zone_id=aws_zone_id)
+            except NotFoundException:
+                # Add domain to AWS
+                zone_info = aws.create_zone(domain)
+                aws_zone_id = zone_info["Id"]
+                existing_dns_records = None
 
-        # Retrieve DNS records from Cloudflare
-        records = cloudflare.zones.dns_records.get(zone["id"])
+            # Retrieve DNS records from Cloudflare
+            records = cloudflare.get_dns_records(zone.id)
 
-        for record in records:
-            if record["type"] in ["NS", "SOA"]:
-                continue  # Skip NS and SOA records
+            create_records = []
+            for record in records:
+                record_name = record.name
+                record_type = record.type
+                content = record.content
+                if record_type in ["NS", "SOA"]:
+                    continue  # Skip NS and SOA records
 
-            # Create record in AWS
-            aws_client.change_resource_record_sets(
-                HostedZoneId=hosted_zone_id,
-                ChangeBatch={
-                    "Changes": [
+                # we will create failover records for this
+                if (
+                    record_type == "A"
+                    and record_name == domain
+                    and Env.CREATE_FAILOVER_RECORDS
+                ):
+                    continue
+
+                if existing_dns_records:
+                    # Check if record already exists
+                    existing_record = next(
+                        (
+                            r
+                            for r in existing_dns_records
+                            if r["Name"].rstrip(".") == record_name
+                            and r["Type"] == record_type
+                        ),
+                        None,
+                    )
+                    if existing_record:
+                        continue
+
+                if record_type == "MX" or record_type == "SRV":
+                    content = f"{int(record.priority)} {content}"
+
+                create_record = {
+                    "Name": record_name,
+                    "Type": record_type,
+                    "ResourceRecords": [{"Value": content}],
+                }
+                try:
+                    create_record["TTL"] = int(record.ttl)
+                except:
+                    pass
+
+                create_records.append(create_record)
+                print(f"Adding {record_type} record: {record_name} -> {content}")
+
+            if Env.CREATE_FAILOVER_RECORDS:
+                # add primary failover record
+                existing_record = next(
+                    (
+                        r
+                        for r in existing_dns_records
+                        if r["Name"].rstrip(".") == domain
+                        and r["Type"] == "A"
+                        and "Failover" in r
+                        and r["Failover"] == "PRIMARY"
+                    ),
+                    None,
+                )
+                if not existing_record:
+                    create_records.append(
                         {
-                            "Action": "CREATE",
-                            "ResourceRecordSet": {
-                                "Name": record["name"],
-                                "Type": record["type"],
-                                "TTL": record["ttl"],
-                                "ResourceRecords": [{"Value": record["content"]}],
-                            },
+                            "Name": domain,
+                            "Type": "A",
+                            "Failover": "PRIMARY",
+                            "TTL": 300,
+                            "HealthCheckId": Env.HEALTH_CHECK_ID,
+                            "SetIdentifier": Env.PRIMARY_IP.split(".")[-1] + "-f",
+                            "ResourceRecords": [
+                                {"Value": Env.PRIMARY_IP},
+                            ],
                         }
-                    ]
-                },
-            )
-            print(
-                f"Added {record['type']} record: {record['name']} -> {record['content']}"
-            )
+                    )
+                # add secondary failover record
+                existing_record = next(
+                    (
+                        r
+                        for r in existing_dns_records
+                        if r["Name"].rstrip(".") == domain
+                        and r["Type"] == "A"
+                        and "Failover" in r
+                        and r["Failover"] == "SECONDARY"
+                    ),
+                    None,
+                )
+                if not existing_record:
+                    create_records.append(
+                        {
+                            "Name": domain,
+                            "Type": "A",
+                            "Failover": "SECONDARY",
+                            "TTL": 300,
+                            "SetIdentifier": Env.SECONDARY_IP.split(".")[-1],
+                            "ResourceRecords": [
+                                {"Value": Env.SECONDARY_IP},
+                            ],
+                        }
+                    )
+
+            # Create records in AWS
+            if create_records:
+                aws.create_dns_records(zone_id=aws_zone_id, records=create_records)
+            success += 1
+        except Exception as e:
+            print(f"Error: {e}")
+            failure_domains.append((domain, zone.id))
 
     print("Migration to AWS completed.")
+    return processed, success, failure_domains
 
 
 if __name__ == "__main__":
-    # import argparse
 
-    # parser = argparse.ArgumentParser(description="Migrate DNS Records")
-    # parser.add_argument(
-    #     "--direction", choices=["aws-to-cloudflare", "cloudflare-to-aws"], required=True
-    # )
-    # args = parser.parse_args()
+    if Env.SCENARIO == 1:
+        operation = migrate_to_cloudflare
+    elif Env.SCENARIO == 2:
+        operation = monitor_ns_propagation
+    elif Env.SCENARIO == 3:
+        operation = migrate_to_aws
 
-    # if args.direction == "aws-to-cloudflare":
-    #     migrate_to_cloudflare()
-    # elif args.direction == "cloudflare-to-aws":
-    #     migrate_to_aws()
-
-    processed, success, failure_domains = migrate_to_aws()
+    processed, success, failure_domains = operation()
     print("Total Processed: ", processed)
     print("Total Success: ", success)
     print("Total Failure: ", len(failure_domains))

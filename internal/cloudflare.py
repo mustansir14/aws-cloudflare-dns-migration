@@ -2,6 +2,7 @@ import warnings
 from typing import Dict, List
 
 from cloudflare import BadRequestError, Cloudflare, NotFoundError
+
 from internal.exceptions import NotFoundException
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -110,12 +111,13 @@ class CloudflareClient:
             if "existing page rule" in str(e):
                 return
             raise e
-        
+
     def list_zones(self) -> List[object]:
+        print("Fetching all hosted zones from cloudflare....")
         zones = []
         for zone in self.cloudflare.zones.list():
             zones.append(zone)
         return zones
-    
+
     def check_nameservers_now(self, zone_id: str) -> None:
         self.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
