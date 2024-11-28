@@ -75,7 +75,7 @@ class CloudflareClient:
             if ruleset.rules:
                 rule_exists = False
                 for existing_rule in ruleset.rules:
-                    if existing_rule.expression == rule["expression"]:
+                    if existing_rule.description == rule["description"]:
                         rule_exists = True
                         break
 
@@ -95,7 +95,9 @@ class CloudflareClient:
         try:
             self.cloudflare.pagerules.create(
                 zone_id=zone_id,
-                actions=[{"id": "disable_security"}],
+                actions=[
+                    {"id": "disable_security"},
+                    {"id": "ssl", "value": "off"}],
                 targets=[
                     {
                         "constraint": {

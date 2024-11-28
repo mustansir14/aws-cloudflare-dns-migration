@@ -215,7 +215,11 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                     "description": "Cache Everything",
                     "expression": 'http.request.method in {"GET" "HEAD"}',
                     "action": "set_cache_settings",
-                    "action_parameters": {"cache": True},
+                    "action_parameters": {
+                        "cache": True,
+                        "edge_ttl": {"mode": "respect_origin"},
+                        "browser_ttl": {"mode": "respect_origin"},
+                    },
                 },
             ]
             cloudflare.add_rules(
