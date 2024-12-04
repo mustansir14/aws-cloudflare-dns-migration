@@ -3,7 +3,7 @@ from typing import List, Tuple
 from internal.aws import AWSClient
 from internal.cloudflare import CloudflareClient
 from internal.env import Env
-from internal.exceptions import NotFoundException
+from internal.exceptions import NotFoundException, RateLimitException
 
 # Initialize AWS and Cloudflare clients
 aws = AWSClient(Env.AWS_ACCESS_KEY_ID, Env.AWS_SECRET_ACCESS_KEY)
@@ -28,6 +28,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
 
     for zone_number, zone in enumerate(hosted_zones, start=1):
         try:
+            processed += 1
             domain = zone["Name"].rstrip(".")
             print(f"Migrating domain: {domain} ({zone_number}/{len(hosted_zones)})")
 
@@ -37,6 +38,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                 print(f"Domain {domain} already exists on Cloudflare")
                 if Env.SKIP_DNS_SYNC:
                     print("Skipping...")
+                    success += 1
                     continue
                 print("Syncing DNS records")
                 cloudflare_zone_id = existing_zone.id
@@ -45,7 +47,12 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                 )
             except NotFoundException:
                 # Add domain to Cloudflare
-                zone_info = cloudflare.create_zone(account=account, name=domain)
+                try:
+                    zone_info = cloudflare.create_zone(account=account, name=domain)
+                except RateLimitException:
+                    print("Rate limit error while adding domain, Exiting....")
+                    failure_domains.append((domain, None))
+                    break
                 cloudflare_zone_id = zone_info.id
                 existing_dns_records = None
 
@@ -236,7 +243,6 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
         except Exception as e:
             print(f"Error: {e}")
             failure_domains.append((domain, zone["Id"]))
-        processed += 1
 
     print("Migration to Cloudflare completed.")
     return processed, success, failure_domains

@@ -1,9 +1,10 @@
 import warnings
 from typing import Dict, List
 
-from cloudflare import BadRequestError, Cloudflare, NotFoundError
+from cloudflare import (BadRequestError, Cloudflare, NotFoundError,
+                        RateLimitError)
 
-from internal.exceptions import NotFoundException
+from internal.exceptions import NotFoundException, RateLimitException
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -28,7 +29,10 @@ class CloudflareClient:
         return dns_records
 
     def create_zone(self, account: object, name: str) -> object:
-        return self.cloudflare.zones.create(account=account, name=name)
+        try:
+            return self.cloudflare.zones.create(account=account, name=name)
+        except RateLimitError:
+            raise RateLimitException("Domain adding limit exceeded.")
 
     def create_dns_record(
         self,
@@ -95,9 +99,7 @@ class CloudflareClient:
         try:
             self.cloudflare.pagerules.create(
                 zone_id=zone_id,
-                actions=[
-                    {"id": "disable_security"},
-                    {"id": "ssl", "value": "off"}],
+                actions=[{"id": "disable_security"}, {"id": "ssl", "value": "off"}],
                 targets=[
                     {
                         "constraint": {

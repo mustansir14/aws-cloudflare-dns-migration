@@ -4,3 +4,7 @@ class BaseClientException(Exception):
 
 class NotFoundException(BaseClientException):
     """Not found exception."""
+
+
+class RateLimitException(BaseClientException):
+    """Rate limit exception."""
