@@ -125,3 +125,7 @@ class CloudflareClient:
 
     def check_nameservers_now(self, zone_id: str) -> None:
         self.cloudflare.zones.activation_check.trigger(zone_id=zone_id)
+
+
+    def delete_zone(self, zone_id: str):
+        self.cloudflare.zones.delete(zone_id=zone_id)

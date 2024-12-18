@@ -15,7 +15,7 @@ cloudflare = CloudflareClient(
 def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
     """Migrate DNS records from AWS Route 53 to Cloudflare."""
 
-    OLD_IPs = ["209.216.83.146", "209.216.83.147"]
+    OLD_IPs = [Env.PRIMARY_IP, Env.SECONDARY_IP]
 
     hosted_zones = aws.list_unique_hosted_zones()
 
@@ -28,6 +28,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
 
     for zone_number, zone in enumerate(hosted_zones, start=1):
         try:
+            cloudflare_zone_id = None
             processed += 1
             domain = zone["Name"].rstrip(".")
             print(f"Migrating domain: {domain} ({zone_number}/{len(hosted_zones)})")
@@ -78,12 +79,13 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                 ]  # Transform IP for A/CNAME if needed
                 if record_type in ["A", "CNAME"]:
                     record_content = [
-                        "44.198.12.127" if r in OLD_IPs else r for r in record_content
+                        Env.LOAD_BALANCER_IP if r in OLD_IPs else r
+                        for r in record_content
                     ]
 
-                    if "44.198.12.127" in record_content:
+                    if Env.LOAD_BALANCER_IP in record_content:
                         if one_done:
-                            record_content.remove("44.198.12.127")
+                            record_content.remove(Env.LOAD_BALANCER_IP)
                         else:
                             one_done = True
 
@@ -242,6 +244,9 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
             success += 1
         except Exception as e:
             print(f"Error: {e}")
+            # delete dangling zone
+            if cloudflare_zone_id:
+                cloudflare.delete_zone(cloudflare_zone_id)
             failure_domains.append((domain, zone["Id"]))
 
     print("Migration to Cloudflare completed.")

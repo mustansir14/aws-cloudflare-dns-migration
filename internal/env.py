@@ -28,6 +28,7 @@ class AppEnv:
     SECONDARY_IP: str = ""
     HEALTH_CHECK_ID: str = ""
     CREATE_FAILOVER_RECORDS: bool = True
+    LOAD_BALANCER_IP: str = ""
 
     """
     Map environment variables to class fields according to these rules:
@@ -64,6 +65,15 @@ class AppEnv:
 
         if self.SCENARIO not in [1, 2, 3]:
             raise AppEnvError("SCENARIO must be one of 1, 2, 3")
+
+        if self.SCENARIO == 1 and (
+            self.PRIMARY_IP == ""
+            or self.SECONDARY_IP == ""
+            or self.LOAD_BALANCER_IP == ""
+        ):
+            raise AppEnvError(
+                "PRIMARY_IP, SECONDARY_IP and LOAD_BALANCER_IP are required for SCENARIO 1"
+            )
 
         if (
             self.SCENARIO == 3
