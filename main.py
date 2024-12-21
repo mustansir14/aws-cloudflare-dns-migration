@@ -66,7 +66,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                 if record["Type"] in ["NS", "SOA", "SPF"]:
                     continue  # Skip NS and SOA records, SPF records are not supported
 
-                record_name = record["Name"].rstrip(".")
+                record_name = record["Name"].rstrip(".").replace("\\052", "*")
                 record_type = record["Type"]
                 kwargs = {}
                 data = {}
