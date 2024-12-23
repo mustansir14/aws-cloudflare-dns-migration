@@ -55,6 +55,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                     failure_domains.append((domain, None))
                     break
                 cloudflare_zone_id = zone_info.id
+                existing_zone = None
                 existing_dns_records = None
 
             # Retrieve DNS records from AWS
@@ -66,12 +67,14 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
                 if record["Type"] in ["NS", "SOA", "SPF"]:
                     continue  # Skip NS and SOA records, SPF records are not supported
 
-                record_name = record["Name"].rstrip(".").replace("\\052", "*")
+                record_name = record["Name"].rstrip(".").replace("\\052", "*").replace("\\100.", "")
                 record_type = record["Type"]
                 kwargs = {}
                 data = {}
                 if "TTL" in record:
                     kwargs["ttl"] = record["TTL"]
+                    if record["TTL"] > 86400:
+                        kwargs["ttl"] = 86400
                 if "ResourceRecords" not in record:
                     continue
                 record_content = [
@@ -245,7 +248,7 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
         except Exception as e:
             print(f"Error: {e}")
             # delete dangling zone
-            if cloudflare_zone_id:
+            if cloudflare_zone_id and not existing_zone:
                 cloudflare.delete_zone(cloudflare_zone_id)
             failure_domains.append((domain, zone["Id"]))
 
