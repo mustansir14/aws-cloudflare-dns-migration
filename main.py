@@ -136,9 +136,9 @@ def migrate_to_cloudflare() -> Tuple[int, int, List[Tuple[str, str]]]:
             cloudflare.edit_setting(
                 zone_id=cloudflare_zone_id, name="ssl", value="full"
             )
-            print("Setting always_use_https to off")
+            print("Setting always_use_https to on")
             cloudflare.edit_setting(
-                zone_id=cloudflare_zone_id, name="always_use_https", value="off"
+                zone_id=cloudflare_zone_id, name="always_use_https", value="on"
             )
 
             # Add WAF rules
