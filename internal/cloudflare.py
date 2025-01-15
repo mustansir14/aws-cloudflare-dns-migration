@@ -84,6 +84,15 @@ class CloudflareClient:
                         break
 
                 if rule_exists:
+                    self.cloudflare.rulesets.rules.edit(
+                        rule_id=existing_rule.id,
+                        ruleset_id=ruleset.id,
+                        zone_id=zone_id,
+                        action=rule["action"],
+                        expression=rule["expression"],
+                        description=rule["description"],
+                        action_parameters=rule["action_parameters"],
+                    )
                     continue
 
             self.cloudflare.rulesets.rules.create(
